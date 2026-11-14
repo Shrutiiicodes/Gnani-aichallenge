@@ -2,3 +2,5 @@
 work/
 __pycache__/
 .claude/
+demo/build/
+demo/*.mp4
