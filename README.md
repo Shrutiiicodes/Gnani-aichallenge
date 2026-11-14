@@ -2,7 +2,7 @@
 
 Indian enterprises (banks, insurers, fintechs, edtechs) record training and explainer videos in English, and dubbing them into regional languages takes weeks. Bhasha Dub turns a short clip into any of 10 Indian languages (plus Hinglish) in **the original speaker's cloned voice**, in under a minute.
 
-**Live demo: https://bhasha-dub.onrender.com** (free tier, so the first load can take ~30 s while it wakes up)
+**Live demo: https://bhasha-dub.onrender.com** · **One-page pitch: [PITCH.md](PITCH.md)** (free tier, so the first load can take ~30 s while it wakes up)
 
 Built for the Gnani.ai Great Indian AI Internship Challenge. #GnaniAI #GreatIndianAIInternshipChallenge
 
