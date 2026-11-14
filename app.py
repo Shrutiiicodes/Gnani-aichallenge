@@ -15,6 +15,8 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 FF = imageio_ffmpeg.get_ffmpeg_exe()
 WORK = Path(__file__).with_name("work")
 MAX_SEC = 20  # credit guardrail; also under Prisma's 30s REST limit
+MAX_RUNS_PER_DAY = int(os.getenv("MAX_RUNS_PER_DAY", "40"))
+SAMPLE = Path(__file__).with_name("samples") / "kyc_explainer_en.wav"
 
 # label -> (code, Timbre v2.5 voice)
 LANGS = {
@@ -124,7 +126,7 @@ st.title("🎙️ Bhasha Dub")
 st.caption("One explainer video → every Indian language, in the speaker's own voice · "
            "Powered by Gnani.ai Prisma v3.0 · Voice Clone v1 · Timbre v2.5")
 if not KEY or not GROQ_KEY:
-    st.error("Set GNANI_API_KEY and GROQ_API_KEY in a .env file next to app.py, then restart.")
+    st.error("Set GNANI_API_KEY and GROQ_API_KEY (in .env locally, or in the host's secrets), then restart.")
     st.stop()
 
 c1, c2, c3 = st.columns([2, 1, 1])
@@ -134,15 +136,22 @@ mode = c3.radio("Voice", ["clone", "timbre"], format_func=lambda m: "Clone origi
 keep = c2.toggle("Keep English domain terms (KYC, EMI…)", value=True)
 consent = c3.checkbox("I have the speaker's consent to clone this voice")
 
-if not up:
-    st.info("Upload a short clip to start. Tip: use a slides/screen-recording style video, since lips are not re-synced.")
+if up:
+    data, name = up.getvalue(), up.name
+elif st.session_state.get("use_sample"):
+    data, name = SAMPLE.read_bytes(), SAMPLE.name
+    c1.caption("Using the built-in sample: an English KYC explainer.")
+else:
+    st.info("Upload a short clip to start, or try the built-in sample. Tip: slides/screen-recording videos work best, since lips are not re-synced.")
+    if c1.button("▶️ Try the sample (English KYC explainer)"):
+        st.session_state["use_sample"] = True
+        st.rerun()
     st.stop()
 
-data = up.getvalue()
 h = hashlib.sha256(data).hexdigest()[:16]
 d = WORK / h
 d.mkdir(parents=True, exist_ok=True)
-inp = d / f"input{Path(up.name).suffix.lower()}"
+inp = d / f"input{Path(name).suffix.lower()}"
 if not inp.exists():
     inp.write_bytes(data)
 src = d / "src.wav"
@@ -155,6 +164,14 @@ tkey = f"tr_{h}_{lang}_{keep}"
 
 
 def synth(text):
+    # ponytail: one global daily cap so a public link can't drain the API credits; per-user limits if it ever matters.
+    usage_f = WORK / "usage.json"
+    usage = json.loads(usage_f.read_text()) if usage_f.exists() else {}
+    today = time.strftime("%Y-%m-%d")
+    if usage.get(today, 0) >= MAX_RUNS_PER_DAY:
+        raise RuntimeError("Daily demo limit reached. Please try again tomorrow, or watch the demo video.")
+    usage = {today: usage.get(today, 0) + 1}
+    usage_f.write_text(json.dumps(usage))
     t = time.perf_counter()
     raw = d / f"raw_{lang}_{mode}.wav"
     tts(text, lang, mode, cache.get("embedding"), raw)
@@ -179,10 +196,11 @@ if st.button("🚀 Localize & Dub Now", type="primary", disabled=mode == "clone"
                 st.write(f"✅ {label} — {'cached' if hit else f'{(time.perf_counter() - t) * 1000:.0f} ms'}")
             t = time.perf_counter()
             ck = f"{lang}|{keep}"
-            if ck not in cache["translations"]:
+            hit = ck in cache["translations"]
+            if not hit:
                 cache["translations"][ck] = translate(cache["transcript"], lang, wav_seconds(src), keep); save()
             st.session_state[tkey] = cache["translations"][ck]
-            st.write(f"✅ 3. Code-mixed cultural adaptation — {(time.perf_counter() - t) * 1000:.0f} ms")
+            st.write(f"✅ 3. Code-mixed cultural adaptation — {'cached' if hit else f'{(time.perf_counter() - t) * 1000:.0f} ms'}")
             synth(st.session_state[tkey])
             st.write(f"✅ 4. Voice synthesis & sync — {st.session_state[f'out_{h}_{lang}']['ms']:.0f} ms")
             s.update(label="Done", state="complete")
