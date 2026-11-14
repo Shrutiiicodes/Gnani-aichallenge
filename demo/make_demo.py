@@ -13,7 +13,8 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 
 B = ROOT / "demo" / "build"
 B.mkdir(parents=True, exist_ok=True)
-OUT = ROOT / "demo" / "bhasha_dub_demo.mp4"
+LONG = "--long" in sys.argv  # 2-3 min cut for the submission form; default is the ~60 s social cut
+OUT = ROOT / "demo" / ("bhasha_dub_demo_long.mp4" if LONG else "bhasha_dub_demo.mp4")
 S = 1080
 FPS = 30
 CREAM = "#fcf7f2"
@@ -60,6 +61,11 @@ def dub_assets():
                 pass
             job = P.Job(job.h)
         out[lang] = (wav, job.cache["translations"][f"{lang}|True"])
+    if LONG:
+        wav = job.d / "dub_Kannada_timbre.wav"
+        if not wav.exists():
+            job.synth(job.cache["translations"]["Kannada|True"], "Kannada", "timbre")
+        out["Kannada_timbre"] = (wav, job.cache["translations"]["Kannada|True"])
     return out, job
 
 
@@ -69,6 +75,12 @@ NARRATION = {
     "n3": "So, upload a clip, pick a language, and hit dub.",
     "n4": "Gnani Prisma transcribes the speech. Gnani Voice Clone captures the speaker. An L L M rewrites it the way India actually talks. And it is voiced back, in the same voice.",
     "n5": "Terms like K Y C and E M I stay in English, because that is how we actually say them. Edit any word, and regenerate in seconds.",
+    "p_problem": "India's banks, insurers and edtech companies make thousands of training and explainer videos every year, mostly in English. But a loan officer in Hubballi, or a customer in Madurai, learns best in their own language. Localizing one video today means translators, voice artists and a studio. It takes weeks, and the new voice never sounds like the original trainer.",
+    "p_steps": "Step one: Gnani Prisma version three transcribes the clip and detects the language automatically, even for Hinglish. Step two: Gnani Voice Clone builds a speaker embedding from just a few seconds of the original audio. Step three: an L L M adapts the script, not as a textbook translation, but the way people actually speak, keeping terms like K Y C, E M I and U P I in English. Step four: the cloned voice speaks the new script, and the audio is time-matched and merged back onto the video.",
+    "p_timbre": "No consent to clone a voice? Switch to Gnani's Timbre studio voices, with a native speaker for every language. Here is the same script in Kannada, with a Timbre voice.",
+    "p_practical": "Bhasha Dub is built to run cheaply. Transcripts and voice embeddings are cached, so every extra language costs just one synthesis call. Cloning needs explicit consent. And a daily cap stops a public demo from draining A P I credits.",
+    "p_usecases": "Use it for K Y C and loan explainers, insurance claim walkthroughs, frontline staff training and product onboarding. In Hindi, Kannada, Tamil, Telugu, Marathi, Bengali, Gujarati, Malayalam, Punjabi and Hinglish.",
+    "p_next": "Next on the roadmap: lip sync, full-length videos with chunked processing, and dubbing an entire training library into every language in one click.",
     "n6": "One training video. Every Indian language. The trainer's own voice.",
 }
 
@@ -113,7 +125,7 @@ def render_html(page, body, path, transparent=False):
     return path
 
 
-SHOW = {"A I": "AI", "L L M": "LLM", "K Y C": "KYC", "E M I": "EMI"}
+SHOW = {"A I": "AI", "L L M": "LLM", "K Y C": "KYC", "E M I": "EMI", "U P I": "UPI", "A P I": "API", "version three": "v3"}
 
 
 def caption(page, text, i):
@@ -157,6 +169,11 @@ def app_screens(pw):
         page.locator(".studio").scroll_into_view_if_needed()
         page.evaluate("window.scrollTo(0, document.querySelector('.studio').offsetTop - 30)")
         shots["studio"] = B / "app_studio.png"; page.screenshot(path=str(shots["studio"]))
+        page.click(".seg button[data-mode='timbre']")
+        page.click("#langs button:nth-child(2)")
+        shots["studio_timbre"] = B / "app_studio_timbre.png"; page.screenshot(path=str(shots["studio_timbre"]))
+        page.click(".seg button[data-mode='clone']")
+        page.click("#langs button:nth-child(1)")
         page.click("#go")
         page.wait_for_selector("#steps li[data-step='4'].done", timeout=120000)
         page.wait_for_timeout(1200)
@@ -189,7 +206,11 @@ def shot_clip(img, seconds, cap, out, zoom=True):
        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", str(out))
 
 
-def segment(i, audio, shots, cut=None, pad=0.35):
+_seg = iter(range(1000))
+
+
+def segment(_unused, audio, shots, cut=None, pad=0.35):
+    i = f"{'L' if LONG else 'S'}{next(_seg)}"
     """shots: list of (image, caption_png|None, weight, full_bleed). Duration follows the audio."""
     a = B / f"seg{i}_a.wav"
     fade = f"afade=t=out:st={cut - 0.3:.2f}:d=0.3," if cut else ""
@@ -225,6 +246,10 @@ def main():
         c_end = card("end", "<div class='big'>One training video.<br>Every Indian language.<br>The trainer's own voice.</div>"
                             "<div class='url'>bhasha-dub.onrender.com</div>"
                             "<div class='sub'>Gnani Prisma · Voice Clone · Timbre<br>#GnaniAI #GreatIndianAIInternshipChallenge</div>")
+        c_problem = card("problem", "<div class='eyebrow'>The problem</div><div class='big'>Weeks of studio dubbing.<br>A stranger's voice.</div>")
+        c_langs = card("langs", "<div class='eyebrow'>Use cases</div><div class='big' style='font-size:64px'>KYC &amp; loan explainers<br>Claim walkthroughs<br>Frontline training</div>"
+                                "<div class='sub' style='font-family:Nirmala UI;font-size:38px;line-height:1.6'>हिन्दी · ಕನ್ನಡ · தமிழ் · తెలుగు · मराठी<br>বাংলা · ગુજરાતી · മലയാളം · ਪੰਜਾਬੀ · Hinglish</div>")
+        c_next = card("next", "<div class='eyebrow'>What's next</div><div class='big'>Lip sync<br>Full-length videos<br>Whole training libraries</div>")
         caps = iter(range(1000))
         cap = lambda t: caption(page, t, next(caps))
 
@@ -242,17 +267,29 @@ def main():
         # Narrated walkthrough over real app screenshots
         n1 = sentences(NARRATION["n1"])
         segs.append(segment(3, nar["n1"], [(app["hero"], cap(" ".join(n1[:2])), 1, True), (app["hero"], cap(n1[2]), 1, True)]))
-        segs.append(segment(4, nar["n2"], [(app["hero"], cap(s), len(s), True) for s in sentences(NARRATION["n2"])]))
+        if LONG:
+            segs.append(segment(4, nar["p_problem"], [(c_problem, cap(s), len(s), False) for s in sentences(NARRATION["p_problem"])]))
+        else:
+            segs.append(segment(4, nar["n2"], [(app["hero"], cap(s), len(s), True) for s in sentences(NARRATION["n2"])]))
         segs.append(segment(5, nar["n3"], [(app["studio"], cap(NARRATION["n3"]), 1, True)]))
-        segs.append(segment(6, nar["n4"], [(app[f"step{k + 1}"], cap(s), len(s), False) for k, s in enumerate(sentences(NARRATION["n4"]))]))
+        key = "p_steps" if LONG else "n4"
+        segs.append(segment(6, nar[key], [(app[f"step{k + 1}"], cap(s), len(s), False) for k, s in enumerate(sentences(NARRATION[key]))]))
         hi_wav, hi_text = dubs["Hindi"]
-        cut = pause_cut(hi_wav, 4.0, 6.0)
+        cut = pause_cut(hi_wav, 9.0, 12.0) if LONG else pause_cut(hi_wav, 4.0, 6.0)
         segs.append(segment(7, hi_wav, [(app["done"], cap(heard(hi_text, cut, dur(hi_wav))), 1, True)], cut=cut))
         segs.append(segment(8, nar["n5"], [(app["outcard"], cap(s), len(s), False) for s in sentences(NARRATION["n5"])]))
+        if LONG:
+            segs.append(segment(0, nar["p_timbre"], [(app["studio_timbre"], cap(s), len(s), True) for s in sentences(NARRATION["p_timbre"])]))
+            kt_wav, kt_text = dubs["Kannada_timbre"]
+            cut = pause_cut(kt_wav, 5.0, 7.0)
+            segs.append(segment(0, kt_wav, [(app["studio_timbre"], cap(heard(kt_text, cut, dur(kt_wav))), 1, True)], cut=cut))
+            segs.append(segment(0, nar["p_practical"], [(app["studio"], cap(s), len(s), True) for s in sentences(NARRATION["p_practical"])]))
+            segs.append(segment(0, nar["p_usecases"], [(c_langs, cap(s), len(s), False) for s in sentences(NARRATION["p_usecases"])]))
+            segs.append(segment(0, nar["p_next"], [(c_next, cap(NARRATION["p_next"]), 1, False)]))
         segs.append(segment(9, nar["n6"], [(c_end, None, 1, False)], pad=1.5))
         browser.close()
 
-    lst = B / "all.txt"
+    lst = B / ("all_long.txt" if LONG else "all.txt")
     lst.write_text("".join(f"file '{p.as_posix()}'\n" for p in segs))
     ff("-f", "concat", "-safe", "0", "-i", str(lst), "-c:v", "copy", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", str(OUT))
     print(f"done: {OUT}  ({dur(OUT):.1f}s)")
