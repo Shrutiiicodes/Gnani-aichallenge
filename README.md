@@ -22,7 +22,7 @@ Transcripts and voice embeddings are cached per file (SHA-256), so dubbing the s
 ```bash
 pip install -r requirements.txt
 cp .env.example .env   # fill in GNANI_API_KEY and GROQ_API_KEY
-streamlit run app.py
+python -m streamlit run app.py
 ```
 
 ffmpeg comes bundled through `imageio-ffmpeg`; no separate install needed.
