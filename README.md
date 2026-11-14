@@ -17,12 +17,22 @@ clip (≤20 s) ─ffmpeg─► 16 kHz mono wav
 
 Transcripts and voice embeddings are cached per file (SHA-256), so dubbing the same clip into another language, or re-synthesizing an edited line, only calls TTS.
 
-## Run
+## Stack
+
+- `pipeline.py`: Gnani + Groq calls, caching, ffmpeg sync
+- `server.py`: FastAPI; streams each pipeline step to the browser as NDJSON
+- `static/`: hand-built frontend (HTML/CSS/JS, no build step)
+
+## Run locally
 
 ```bash
 pip install -r requirements.txt
 cp .env.example .env   # fill in GNANI_API_KEY and GROQ_API_KEY
-python -m streamlit run app.py
+python -m uvicorn server:app --port 8000
 ```
 
-ffmpeg comes bundled through `imageio-ffmpeg`; no separate install needed.
+Open http://localhost:8000. ffmpeg comes bundled through `imageio-ffmpeg`.
+
+## Deploy
+
+`render.yaml` deploys it as one free Render web service; set `GNANI_API_KEY` and `GROQ_API_KEY` in the Render dashboard. A daily cap (`MAX_RUNS_PER_DAY`, default 40) protects API credits on a public link.

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bhasha Dub · Speak once, sound native in every Indian language</title>
+<meta name="description" content="Dub training and explainer videos into Indian languages in the speaker's own cloned voice. Built on Gnani.ai Prisma, Voice Clone and Timbre.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="glow"></div>
+<header class="nav wrap">
+  <div class="brand"><span class="logo">ध</span> Bhasha Dub</div>
+  <a class="gh" href="https://github.com/Shrutiiicodes/Gnani-aichallenge" target="_blank" rel="noopener">GitHub ↗</a>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <p class="eyebrow">Built on Gnani.ai · Prisma v3 · Voice Clone v1 · Timbre v2.5</p>
+    <h1>Speak once.<br>Sound native in <span id="rot" class="rot">हिन्दी</span></h1>
+    <p class="lead">Upload a training or explainer clip in English. Get it back in any Indian language, <strong>in the speaker's own voice</strong>, in under a minute. No studio, no voice actors.</p>
+  </section>
+
+  <section class="studio card" aria-label="Dubbing studio">
+    <div class="col">
+      <h2><span class="n">1</span> Source clip</h2>
+      <label id="drop" class="drop" tabindex="0">
+        <input id="file" type="file" accept=".mp4,.mov,.webm,.mkv,.wav,.mp3,.m4a,.ogg" hidden>
+        <span class="drop-icon">⬆</span>
+        <span id="dropText"><b>Drop a video or audio clip</b><br><small>MP4, MOV, WEBM, WAV, MP3, M4A · first 20 s is used</small></span>
+      </label>
+      <button id="sampleBtn" class="ghost" type="button">▶ Use the sample: English KYC explainer</button>
+      <p class="hint">Tip: slides or screen-recording videos look best, since lips aren't re-synced.</p>
+    </div>
+
+    <div class="col">
+      <h2><span class="n">2</span> Dub into</h2>
+      <div id="langs" class="chips" role="radiogroup" aria-label="Target language"></div>
+
+      <h2><span class="n">3</span> Voice</h2>
+      <div class="seg" role="radiogroup" aria-label="Voice">
+        <button type="button" data-mode="clone" class="on" role="radio" aria-checked="true">🧬 Clone original speaker</button>
+        <button type="button" data-mode="timbre" role="radio" aria-checked="false">🎙 Gnani studio voice</button>
+      </div>
+      <label class="check"><input id="keep" type="checkbox" checked> Keep English domain terms (KYC, EMI, UPI…) the way people actually say them</label>
+      <label class="check" id="consentRow"><input id="consent" type="checkbox"> I have the speaker's consent to clone this voice</label>
+
+      <button id="go" class="cta" type="button" disabled>Localize &amp; Dub</button>
+      <p id="err" class="err" role="alert" hidden></p>
+    </div>
+  </section>
+
+  <ol id="steps" class="steps" hidden>
+    <li data-step="1"><span class="dot"></span><div><b>Prisma STT</b><small>Transcribe · auto-detect language</small><em></em></div></li>
+    <li data-step="2"><span class="dot"></span><div><b>Voice Clone</b><small>Extract speaker embedding</small><em></em></div></li>
+    <li data-step="3"><span class="dot"></span><div><b>Cultural adaptation</b><small>Natural, code-mixed translation</small><em></em></div></li>
+    <li data-step="4"><span class="dot"></span><div><b>Synthesis &amp; sync</b><small>Cloned voice · time-aligned</small><em></em></div></li>
+  </ol>
+
+  <section id="results" class="results" hidden>
+    <article class="card">
+      <header><h3>Original</h3><span id="detected" class="pill"></span></header>
+      <div id="origMedia" class="media"></div>
+      <label class="lbl">Transcript</label>
+      <p id="transcript" class="script"></p>
+    </article>
+    <article class="card accent">
+      <header><h3 id="outTitle">Localized</h3><span id="match" class="pill green"></span></header>
+      <div id="outMedia" class="media"></div>
+      <p id="stats" class="stats"></p>
+      <label class="lbl" for="translation">Translated script <small>edit a word, then re-synthesize</small></label>
+      <textarea id="translation" class="script" rows="5"></textarea>
+      <div class="row">
+        <button id="resynth" class="ghost" type="button">↻ Re-synthesize</button>
+        <a id="download" class="ghost" download>⬇ Download</a>
+      </div>
+    </article>
+  </section>
+
+  <section class="how">
+    <div><b>Why</b><p>Banks, insurers and edtechs record training videos in English, but their customers and frontline staff speak 10+ languages. Studio dubbing takes weeks.</p></div>
+    <div><b>How</b><p>Gnani Prisma transcribes, Gnani Voice Clone captures the speaker, an LLM adapts the script the way Indians actually talk, and the dub is voiced and synced back onto the video.</p></div>
+    <div><b>Languages</b><p>Hindi, Kannada, Tamil, Telugu, Marathi, Bengali, Gujarati, Malayalam, Punjabi, Hinglish and English.</p></div>
+  </section>
+</main>
+
+<footer class="wrap foot">Built for the Great Indian AI Internship Challenge · #GnaniAI #GreatIndianAIInternshipChallenge</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,10 +1,9 @@
-"""Bhasha Dub: dub a short clip into Indian languages in the speaker's own voice (Gnani Prisma + Voice Clone + Timbre, Groq for translation)."""
-import hashlib, json, os, subprocess, time, wave
+"""Bhasha Dub pipeline: dub a short clip into Indian languages in the speaker's own voice (Gnani Prisma + Voice Clone + Timbre, Groq for translation)."""
+import hashlib, json, os, re, subprocess, time, wave
 from pathlib import Path
 
 import imageio_ffmpeg
 import requests
-import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).with_name(".env"))
@@ -120,113 +119,87 @@ def sync_and_mux(dub_raw, src_wav, inp, d, tag):
     return out, orig, dub, final
 
 
-# ---------------- UI ----------------
-st.set_page_config(page_title="Bhasha Dub", page_icon="🎙️", layout="wide")
-st.title("🎙️ Bhasha Dub")
-st.caption("One explainer video → every Indian language, in the speaker's own voice · "
-           "Powered by Gnani.ai Prisma v3.0 · Voice Clone v1 · Timbre v2.5")
-if not KEY or not GROQ_KEY:
-    st.error("Set GNANI_API_KEY and GROQ_API_KEY (in .env locally, or in the host's secrets), then restart.")
-    st.stop()
-
-c1, c2, c3 = st.columns([2, 1, 1])
-up = c1.file_uploader("Video or audio clip (first 20 s is used)", type=["mp4", "mov", "webm", "wav", "mp3", "m4a"])
-lang = c2.selectbox("Dub into", list(LANGS))
-mode = c3.radio("Voice", ["clone", "timbre"], format_func=lambda m: "Clone original speaker" if m == "clone" else "Gnani studio voice")
-keep = c2.toggle("Keep English domain terms (KYC, EMI…)", value=True)
-consent = c3.checkbox("I have the speaker's consent to clone this voice")
-
-if up:
-    data, name = up.getvalue(), up.name
-elif st.session_state.get("use_sample"):
-    data, name = SAMPLE.read_bytes(), SAMPLE.name
-    c1.caption("Using the built-in sample: an English KYC explainer.")
-else:
-    st.info("Upload a short clip to start, or try the built-in sample. Tip: slides/screen-recording videos work best, since lips are not re-synced.")
-    if c1.button("▶️ Try the sample (English KYC explainer)"):
-        st.session_state["use_sample"] = True
-        st.rerun()
-    st.stop()
-
-h = hashlib.sha256(data).hexdigest()[:16]
-d = WORK / h
-d.mkdir(parents=True, exist_ok=True)
-inp = d / f"input{Path(name).suffix.lower()}"
-if not inp.exists():
-    inp.write_bytes(data)
-src = d / "src.wav"
-if not src.exists():
-    ff("-i", str(inp), "-t", str(MAX_SEC), "-vn", "-ac", "1", "-ar", "16000", str(src))
-cache_f = d / "cache.json"
-cache = json.loads(cache_f.read_text("utf-8")) if cache_f.exists() else {"translations": {}}
-save = lambda: cache_f.write_text(json.dumps(cache, ensure_ascii=False), "utf-8")
-tkey = f"tr_{h}_{lang}_{keep}"
-
-
-def synth(text):
+def use_credit():
     # ponytail: one global daily cap so a public link can't drain the API credits; per-user limits if it ever matters.
-    usage_f = WORK / "usage.json"
-    usage = json.loads(usage_f.read_text()) if usage_f.exists() else {}
+    f = WORK / "usage.json"
+    usage = json.loads(f.read_text()) if f.exists() else {}
     today = time.strftime("%Y-%m-%d")
     if usage.get(today, 0) >= MAX_RUNS_PER_DAY:
         raise RuntimeError("Daily demo limit reached. Please try again tomorrow, or watch the demo video.")
-    usage = {today: usage.get(today, 0) + 1}
-    usage_f.write_text(json.dumps(usage))
+    f.write_text(json.dumps({today: usage.get(today, 0) + 1}))
+
+
+class Job:
+    """One uploaded clip: its folder under work/<sha256[:16]>, trimmed 16 kHz wav, and cached API results."""
+
+    def __init__(self, h):
+        if not re.fullmatch(r"[0-9a-f]{16}", h or ""):
+            raise ValueError("bad job id")
+        self.h, self.d = h, WORK / h
+        self.inp = next(self.d.glob("input.*"))
+        self.src = self.d / "src.wav"
+        self.cache_f = self.d / "cache.json"
+        self.cache = json.loads(self.cache_f.read_text("utf-8")) if self.cache_f.exists() else {"translations": {}}
+
+    @classmethod
+    def create(cls, data, name):
+        h = hashlib.sha256(data).hexdigest()[:16]
+        d = WORK / h
+        d.mkdir(parents=True, exist_ok=True)
+        inp = d / f"input{Path(name).suffix.lower()}"
+        if not inp.exists():
+            inp.write_bytes(data)
+        if not (d / "src.wav").exists():
+            ff("-i", str(inp), "-t", str(MAX_SEC), "-vn", "-ac", "1", "-ar", "16000", str(d / "src.wav"))
+        return cls(h)
+
+    def save(self):
+        self.cache_f.write_text(json.dumps(self.cache, ensure_ascii=False), "utf-8")
+
+    def url(self, p):
+        return f"/media/{self.h}/{p.name}?v={int(p.stat().st_mtime)}"
+
+    def synth(self, text, lang, mode):
+        use_credit()
+        raw = self.d / f"raw_{lang}_{mode}.wav"
+        tts(text, lang, mode, self.cache.get("embedding"), raw)
+        out, orig, dub, final = sync_and_mux(raw, self.src, self.inp, self.d, f"{lang}_{mode}")
+        return {"output_url": self.url(out), "output_is_video": out.suffix == ".mp4",
+                "download_name": f"bhasha_dub_{lang.lower()}{out.suffix}",
+                "original_sec": round(orig, 1), "dubbed_sec": round(dub, 1), "synced_sec": round(final, 1),
+                "match": round(100 * min(orig, final) / max(orig, final))}
+
+
+def timed(fn):
     t = time.perf_counter()
-    raw = d / f"raw_{lang}_{mode}.wav"
-    tts(text, lang, mode, cache.get("embedding"), raw)
-    out, orig, dub, final = sync_and_mux(raw, src, inp, d, f"{lang}_{mode}")
-    st.session_state[f"out_{h}_{lang}"] = {"path": str(out), "stats": (orig, dub, final), "ms": (time.perf_counter() - t) * 1000}
+    v = fn()
+    return v, round((time.perf_counter() - t) * 1000)
 
 
-if st.button("🚀 Localize & Dub Now", type="primary", disabled=mode == "clone" and not consent):
-    try:
-        with st.status("Running pipeline…", expanded=True) as s:
-            steps = [
-                ("1. Prisma STT transcription", "transcript", lambda: dict(zip(("transcript", "detected"), stt(src)))),
-                ("2. Speaker embedding extraction", "embedding", lambda: {"embedding": clone_embedding(src)}),
-            ]
-            for label, k, fn in steps:
-                if k == "embedding" and mode != "clone":
-                    continue
-                t = time.perf_counter()
-                hit = k in cache
-                if not hit:
-                    cache.update(fn()); save()
-                st.write(f"✅ {label} — {'cached' if hit else f'{(time.perf_counter() - t) * 1000:.0f} ms'}")
-            t = time.perf_counter()
-            ck = f"{lang}|{keep}"
-            hit = ck in cache["translations"]
-            if not hit:
-                cache["translations"][ck] = translate(cache["transcript"], lang, wav_seconds(src), keep); save()
-            st.session_state[tkey] = cache["translations"][ck]
-            st.write(f"✅ 3. Code-mixed cultural adaptation — {'cached' if hit else f'{(time.perf_counter() - t) * 1000:.0f} ms'}")
-            synth(st.session_state[tkey])
-            st.write(f"✅ 4. Voice synthesis & sync — {st.session_state[f'out_{h}_{lang}']['ms']:.0f} ms")
-            s.update(label="Done", state="complete")
-    except Exception as e:
-        st.error(str(e))
+def dub(data, name, lang, mode, keep):
+    """Yields one event per pipeline step so the UI can tick them off live."""
+    job = Job.create(data, name)
+    c = job.cache
+    yield {"id": job.h, "input_url": job.url(job.inp), "input_is_video": job.inp.suffix in VIDEO_EXT}
 
-left, right = st.columns(2)
-with left:
-    st.subheader("Original")
-    (st.video if inp.suffix in VIDEO_EXT else st.audio)(str(inp))
-    if "transcript" in cache:
-        st.caption(f"Detected language: {cache.get('detected', '?')}")
-        st.text_area("Source transcript", cache["transcript"], height=150, disabled=True)
-with right:
-    st.subheader(f"Localized · {lang}")
-    res = st.session_state.get(f"out_{h}_{lang}")
-    if res:
-        p = Path(res["path"])
-        (st.video if p.suffix == ".mp4" else st.audio)(str(p))
-        o, dub, fin = res["stats"]
-        st.caption(f"Original {o:.1f}s · Dubbed {dub:.1f}s → synced {fin:.1f}s · Match {100 * min(o, fin) / max(o, fin):.0f}%")
-        st.download_button("⬇️ Download", p.read_bytes(), file_name=f"bhasha_dub_{lang.lower()}{p.suffix}")
-    if tkey in st.session_state:
-        edited = st.text_area("Translated script (edit a word and re-synthesize)", key=tkey, height=150)
-        if st.button("🔁 Re-synthesize edit"):
-            try:
-                synth(edited); st.rerun()
-            except Exception as e:
-                st.error(str(e))
+    hit = "transcript" in c
+    if not hit:
+        (c["transcript"], c["detected"]), ms = timed(lambda: stt(job.src)); job.save()
+    yield {"step": 1, "ms": None if hit else ms, "transcript": c["transcript"], "detected": c.get("detected", "?")}
+
+    if mode == "clone":
+        hit = "embedding" in c
+        if not hit:
+            c["embedding"], ms = timed(lambda: clone_embedding(job.src)); job.save()
+        yield {"step": 2, "ms": None if hit else ms}
+    else:
+        yield {"step": 2, "skipped": True}
+
+    ck = f"{lang}|{keep}"
+    hit = ck in c["translations"]
+    if not hit:
+        c["translations"][ck], ms = timed(lambda: translate(c["transcript"], lang, wav_seconds(job.src), keep)); job.save()
+    yield {"step": 3, "ms": None if hit else ms, "translation": c["translations"][ck]}
+
+    res, ms = timed(lambda: job.synth(c["translations"][ck], lang, mode))
+    yield {"step": 4, "ms": ms, **res}
