@@ -35,14 +35,14 @@ def pause_cut(p, lo, hi):
                        capture_output=True, text=True).stderr
     starts = [float(x) for x in re.findall(r"silence_start: ([\d.]+)", r)]
     inside = [s for s in starts if lo <= s <= hi]
-    return (inside[-1] if inside else next((s for s in starts if s > lo), hi)) + 0.15
+    return inside[-1] + 0.15 if inside else hi  # no pause in range: hard cut, faded out in segment()
 
 
 def heard(text, cut, total):
     """Caption = the sentences that roughly fit in the first `cut` seconds of a `total`-second clip."""
     out, chars, n = [], 0, len(text)
     for s in sentences(text):
-        if out and (chars + len(s)) / n > cut / total + 0.08:
+        if out and (chars + len(s)) / n > cut / total:
             break
         out.append(s); chars += len(s)
     return " ".join(out)
@@ -69,7 +69,7 @@ NARRATION = {
     "n3": "So, upload a clip, pick a language, and hit dub.",
     "n4": "Gnani Prisma transcribes the speech. Gnani Voice Clone captures the speaker. An L L M rewrites it the way India actually talks. And it is voiced back, in the same voice.",
     "n5": "Terms like K Y C and E M I stay in English, because that is how we actually say them. Edit any word, and regenerate in seconds.",
-    "n6": "One training video. Every Indian language. The trainer's own voice. Try it now, link in the post.",
+    "n6": "One training video. Every Indian language. The trainer's own voice.",
 }
 
 
@@ -192,7 +192,8 @@ def shot_clip(img, seconds, cap, out, zoom=True):
 def segment(i, audio, shots, cut=None, pad=0.35):
     """shots: list of (image, caption_png|None, weight, full_bleed). Duration follows the audio."""
     a = B / f"seg{i}_a.wav"
-    ff("-i", str(audio), *(["-t", f"{cut:.2f}"] if cut else []), "-af", f"apad=pad_dur={pad}", "-ar", "44100", "-ac", "1", str(a))
+    fade = f"afade=t=out:st={cut - 0.3:.2f}:d=0.3," if cut else ""
+    ff("-i", str(audio), *(["-t", f"{cut:.2f}"] if cut else []), "-af", f"{fade}apad=pad_dur={pad}", "-ar", "44100", "-ac", "1", str(a))
     total = dur(a)
     wsum = sum(s[2] for s in shots)
     parts = []
@@ -248,7 +249,7 @@ def main():
         cut = pause_cut(hi_wav, 4.0, 6.0)
         segs.append(segment(7, hi_wav, [(app["done"], cap(heard(hi_text, cut, dur(hi_wav))), 1, True)], cut=cut))
         segs.append(segment(8, nar["n5"], [(app["outcard"], cap(s), len(s), False) for s in sentences(NARRATION["n5"])]))
-        segs.append(segment(9, nar["n6"], [(c_end, None, 1, False)], pad=1.2))
+        segs.append(segment(9, nar["n6"], [(c_end, None, 1, False)], pad=1.5))
         browser.close()
 
     lst = B / "all.txt"
